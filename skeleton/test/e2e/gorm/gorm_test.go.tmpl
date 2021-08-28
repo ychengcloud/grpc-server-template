@@ -1,0 +1,123 @@
+package testgorm
+
+import (
+	"context"
+	"log"
+	"net"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/orlangure/gnomock"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
+	"gorm.io/gorm"
+
+	"{{ .Extra.pkgpath }}/database"
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+	"{{ .Extra.pkgpath }}/repositories"
+	repogorm "{{ .Extra.pkgpath }}/repositories/gorm"
+	"{{ .Extra.pkgpath }}/services"
+)
+
+const (
+	deadlinePerTest                 = time.Duration(5 * time.Second)
+	deadlineOnStartContanerForTests = time.Duration(60 * time.Second)
+)
+
+var testContainer *gnomock.Container
+var client pb.{{ .Extra.servicename }}ServiceClient
+var svc *services.{{ .Extra.servicename }}Service
+var repo repositories.Repository
+var db *gorm.DB
+
+var err error
+
+func dialer(ctx context.Context) func(context.Context, string) (net.Conn, error) {
+	listener := bufconn.Listen(1024 * 1024)
+
+	server := grpc.NewServer()
+
+	pb.Register{{ .Extra.servicename }}ServiceServer(server, svc)
+
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	return func(context.Context, string) (net.Conn, error) {
+		return listener.Dial()
+	}
+}
+func TestMain(m *testing.M) {
+	os.Exit(testMainWrapper(m))
+}
+
+func testMainWrapper(m *testing.M) int {
+	ctx, cancelFn := context.WithTimeout(context.Background(), deadlineOnStartContanerForTests)
+	defer cancelFn()
+
+	var err error
+	testContainer, err = database.RunContainerForTest(ctx, "../../../database/account.sql")
+	if err != nil {
+		log.Printf("Failed to create test container: %s", err)
+		return 1
+	}
+
+	defer func() {
+		err = gnomock.Stop(testContainer)
+		if err != nil {
+			log.Printf("Failed to Stop container: %s", err)
+		}
+	}()
+
+	db, err = database.ConnectForTest(ctx, testContainer.DefaultAddress())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	repo = repogorm.New{{ .Extra.servicename }}Repository(db)
+
+	svc = services.New{{ .Extra.servicename }}Service(repo)
+
+	conn, err := grpc.DialContext(ctx, "", grpc.WithInsecure(), grpc.WithContextDialer(dialer(ctx)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	client = pb.New{{ .Extra.servicename }}ServiceClient(conn)
+
+	return m.Run()
+}
+
+func truncateTables(t *testing.T) {
+	var err error
+	{{- range .Tables}}
+		err = db.Exec("TRUNCATE TABLE {{.NameSnake}}").Error
+		assert.NoError(t, err)
+	{{- end}}
+
+}
+
+func newTest{{ .Extra.servicename }}Service(t *testing.T, ctx context.Context) *services.{{ .Extra.servicename }}Service {
+	db, err := database.ConnectForTest(ctx, testContainer.DefaultAddress())
+	assert.NoError(t, err)
+
+	repo := repogorm.New{{ .Extra.servicename }}Repository(db)
+
+	svc := services.New{{ .Extra.servicename }}Service(repo)
+
+	return svc
+}
+
+func assertResponseCodes(t *testing.T, expected error, code codes.Code) {
+	err, ok := status.FromError(expected)
+	assert.True(t, ok)
+	assert.Equal(t, err.Code(), code)
+
+}

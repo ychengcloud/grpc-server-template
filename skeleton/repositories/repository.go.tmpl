@@ -1,0 +1,25 @@
+package repositories
+
+import (
+	"context"
+
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+	"{{ .Extra.pkgpath }}/models"
+)
+
+type Repository interface {
+{{- range .Tables}}
+{{- $tableNameCamel := .NameCamel}}
+
+	List{{.NameCamelPlural}}(ctx context.Context, parent string, filter *pb.{{ .NameCamel }}FilterInput, orderBy string, count int32, token string) (accounts []*models.{{.NameCamel}}, nextToken string, totalCount int64, err error)
+	Create{{.NameCamel}}(ctx context.Context, {{.NameLowerCamel}} *models.{{.NameCamel}}) (*models.{{.NameCamel}}, error)
+	
+{{- range .Fields}}
+{{- if or .IsPrimaryKey .IsUnique }}
+	Get{{ $tableNameCamel }}By{{ .NameCamel }}(ctx context.Context, {{ .NameLowerCamel }} string, withEdges bool) (*models.{{ $tableNameCamel }}, error)
+{{- end}}
+{{- end}}
+	Update{{.NameCamel}}(ctx context.Context, {{.NameLowerCamel}} *models.{{.NameCamel}}) (*models.{{.NameCamel}}, error)
+	Delete{{.NameCamel}}(ctx context.Context, id string) (*models.{{.NameCamel}}, error)
+{{- end}}
+}

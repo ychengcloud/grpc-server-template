@@ -1,0 +1,179 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/bxcodec/faker/v3"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+	"{{ .Extra.pkgpath }}/models"
+	"{{ .Extra.pkgpath }}/test"
+)
+
+{{- $extra := .Extra }}
+
+{{- $modelName := .Name}}
+{{- $modelNameCamel := .NameCamel}}
+{{- $modelNameCamelPlural := .NameCamelPlural}}
+{{- $modelNameLowerCamelPlural := .NameLowerCamelPlural}}
+{{- $modelNameLowerCamel := .NameLowerCamel}}
+func createTest{{ $modelNameCamel }}(t *testing.T, operationContext context.Context, svc *{{ $extra.servicename }}Service, test{{ $modelNameCamel }} *models.{{ $modelNameCamel }}) *pb.{{ $modelNameCamel }} {
+	resp, err := svc.Create{{ $modelNameCamel }}(operationContext, &pb.Create{{ $modelNameCamel }}Request{
+		{{ $modelNameCamel }}: test{{ $modelNameCamel }}.ToPB(),
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.NotEmpty(t, resp.Id)
+
+	return resp
+}
+
+func TestCreate{{ $modelNameCamel }}(t *testing.T) {
+	ctx := context.Background()
+	test{{ $modelNameCamel }} := test.Test{{ $modelNameCamelPlural }}[0]
+	test{{ $modelNameCamel }}.Id = "1"
+	svc := newTest{{ $extra.servicename }}Service(t, ctx)
+
+	repo.EXPECT().
+		Create{{ $modelNameCamel }}(ctx, gomock.Any()).
+		Times(1).Return(test{{ $modelNameCamel }}, nil)
+
+	createTest{{ $modelNameCamel }}(t, ctx, svc, test{{ $modelNameCamel }})
+}
+
+func assert{{ $modelNameCamel }}Equal(t *testing.T, expected *pb.{{ $modelNameCamel }}, actual *pb.{{ $modelNameCamel }}) {
+	{{- range .Fields}}
+		{{- if eq .JoinType "None" }}
+			{{- if and (not .IsPrimaryKey ) (not .IsForeignKey ) }}
+				{{- if not (eq .NameCamel "CreatedAt" "UpdatedAt" ) }}
+					assert.Equal(t, expected.{{ .NameCamel }}, actual.{{ .NameCamel }})
+				{{- end}}
+			{{- end}}
+		{{- end}}
+	{{- end}}
+}
+
+func TestList{{ $modelNameCamelPlural }}(t *testing.T) {
+	ctx := context.Background()
+
+	{{ $modelNameLowerCamelPlural }} := []*models.{{ $modelNameCamel }}{
+		test.Test{{ $modelNameCamelPlural }}[0],
+		test.Test{{ $modelNameCamelPlural }}[1],
+	}
+	svc := newTest{{ $extra.servicename }}Service(t, ctx)
+
+	repo.EXPECT().
+		List{{ $modelNameCamelPlural }}(ctx, gomock.Any(), gomock.Any(), gomock.Any(), int32(10), "").
+		Times(1).Return({{ $modelNameLowerCamelPlural }}, "", int64(2), nil)
+
+	listResponse, err := svc.List{{ $modelNameCamelPlural }}(ctx, &pb.List{{ $modelNameCamelPlural }}Request{
+		PageSize: 10,
+		OrderBy:  "created_at asc",
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, listResponse)
+	assert.Len(t, listResponse.{{ $modelNameCamelPlural }}, 2)
+	assert.Equal(t, listResponse.TotalCount, int64(2))
+	assert{{ $modelNameCamel }}Equal(t, {{ $modelNameLowerCamelPlural }}[0].ToPB(), listResponse.{{ $modelNameCamelPlural }}[0])
+	assert{{ $modelNameCamel }}Equal(t, {{ $modelNameLowerCamelPlural }}[1].ToPB(), listResponse.{{ $modelNameCamelPlural }}[1])
+}
+
+{{- range .Fields}}
+{{- if or .IsPrimaryKey .IsUnique }}
+	func TestGet{{ $modelNameCamel }}By{{ .NameCamel }}(t *testing.T) {
+		ctx := context.Background()
+		test{{ $modelNameCamel }} := test.Test{{ $modelNameCamelPlural }}[0]
+		test{{ $modelNameCamel }}.{{ .NameCamel }} = "1"
+		svc := newTest{{ $extra.servicename }}Service(t, ctx)
+
+		repo.EXPECT().
+			Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, "1", false).
+			Times(1).Return(test{{ $modelNameCamel }}, nil)
+		repo.EXPECT().
+			Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, "", false).
+			Times(1).Return(nil, errors.New("not provided"))
+
+		getResponse, err := svc.Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, &pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request{ {{- .NameCamel }}: test{{ $modelNameCamel }}.{{ .NameCamel -}} })
+		assert.NoError(t, err)
+		assert.NotNil(t, getResponse)
+		assert{{ $modelNameCamel }}Equal(t, test{{ $modelNameCamel }}.ToPB(), getResponse)
+
+		getResponse, err = svc.Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, &pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request{ {{- .NameCamel }}: ""})
+		assert.Error(t, err, "because {{ .NameLowerCamel }} is empty")
+		assert.Contains(t, err.Error(), "not provided")
+		assert.Nil(t, getResponse)
+
+		getResponse, err = svc.Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, nil)
+		assert.Error(t, err, "because request is empty")
+		assert.Contains(t, err.Error(), "not provided")
+		assert.Nil(t, getResponse)
+
+	}
+{{- end}}
+{{- end}}
+
+func TestUpdate{{ $modelNameCamel }}(t *testing.T) {
+	ctx := context.Background()
+
+	test{{ $modelNameCamel }} := test.Test{{ $modelNameCamelPlural }}[0]
+
+	{{- range .Fields}}
+		{{- if eq .JoinType "None" }}
+			{{- if and (not .IsPrimaryKey ) (not .IsForeignKey ) }}
+				err = faker.FakeData(&test{{ $modelNameCamel }}.{{ .NameCamel }})
+				assert.NoError(t, err)
+			{{- end}}
+		{{- end}}
+	{{- end}}
+	svc := newTest{{ $extra.servicename }}Service(t, ctx)
+
+	repo.EXPECT().
+		Update{{ $modelNameCamel }}(ctx, gomock.Any()).
+		Times(1).Return(test{{ $modelNameCamel }}, nil)
+
+	updateResponse, err := svc.Update{{ $modelNameCamel }}(ctx, &pb.Update{{ $modelNameCamel }}Request{
+		{{ $modelNameCamel }}: test{{ $modelNameCamel }}.ToPB(),
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, updateResponse)
+
+	assert{{ $modelNameCamel }}Equal(t, test{{ $modelNameCamel }}.ToPB(), updateResponse)
+}
+
+func TestDelete{{ $modelNameCamel }}(t *testing.T) {
+	ctx := context.Background()
+
+	test{{ $modelNameCamel }} := test.Test{{ $modelNameCamelPlural }}[0]
+	test{{ $modelNameCamel }}.Id = "1"
+	svc := newTest{{ $extra.servicename }}Service(t, ctx)
+
+	repo.EXPECT().
+		Delete{{ $modelNameCamel }}(ctx, "1").
+		Times(1).Return(test{{ $modelNameCamel }}, nil)
+	repo.EXPECT().
+		Delete{{ $modelNameCamel }}(ctx, "").
+		Times(1).Return(nil, errors.New("not provided"))
+	repo.EXPECT().
+		Delete{{ $modelNameCamel }}(ctx, "unknown").
+		Times(1).Return(nil, errors.New("not provided"))
+
+	deleteResponse, err := svc.Delete{{ $modelNameCamel }}(ctx, &pb.Delete{{ $modelNameCamel }}Request{Id: test{{ $modelNameCamel }}.Id})
+	assert.NoError(t, err)
+	assert.NotNil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ $modelNameCamel }}(ctx, &pb.Delete{{ $modelNameCamel }}Request{Id: ""})
+	assert.Error(t, err, "because id is empty")
+	assert.Nil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ $modelNameCamel }}(ctx, nil)
+	assert.Error(t, err, "because request is empty")
+	assert.Nil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ $modelNameCamel }}(ctx, &pb.Delete{{ $modelNameCamel }}Request{Id: "unknown"})
+	assert.Error(t, err, "because id is unknown")
+	assert.Nil(t, deleteResponse)
+}

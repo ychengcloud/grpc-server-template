@@ -1,0 +1,35 @@
+package test
+
+import (
+	"github.com/bxcodec/faker/v3"
+	"{{ .Extra.pkgpath }}/models"
+)
+
+const (
+	MockDataCount = 2
+)
+
+var (
+{{- range .Tables}}
+	Test{{.NameCamelPlural}}        = []*models.{{.NameCamel}}{}
+{{- end}}
+)
+
+func init() {
+	{{- range $model := .Tables}}
+		for i := 0; i < MockDataCount; i++ {
+			test{{$model.NameCamel}} := &models.{{$model.NameCamel}}{}
+			{{- range $field := .Fields}}
+				{{- if eq $field.JoinType "None" }}
+					{{- if and (not .IsPrimaryKey ) (not .IsForeignKey ) }}
+						{{- if not (eq .NameCamel "CreatedAt" "UpdatedAt" ) }}
+							faker.FakeData(&test{{$model.NameCamel}}.{{$field.NameCamel}})
+						{{- end}}
+					{{- end}}
+				{{- end}}
+			{{- end}}
+			Test{{$model.NameCamelPlural}} = append(Test{{$model.NameCamelPlural}}, test{{$model.NameCamel}})
+		}
+	{{- end}}
+
+}

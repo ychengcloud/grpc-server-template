@@ -1,0 +1,22 @@
+package repogorm
+
+import (
+	"gorm.io/gorm"
+
+	"{{ .Extra.pkgpath }}/repositories"
+)
+
+const (
+	MaxLimit = 1000
+)
+
+type repository struct {
+	repositories.Repository
+	db *gorm.DB
+}
+
+func New{{ .Extra.servicename }}Repository(db *gorm.DB) *repository {
+	return &repository{
+		db: db,
+	}
+}

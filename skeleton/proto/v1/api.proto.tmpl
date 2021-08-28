@@ -1,0 +1,204 @@
+{{- $extra := .Extra }}
+syntax = "proto3";
+option go_package = "{{ $extra.pkgpath }}";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+import "google/api/field_behavior.proto";
+import "google/api/annotations.proto";
+
+package {{ $extra.package }};
+
+// Generated according to https://cloud.google.com/apis/design/standard_methods
+service {{ .ProjectName }}Service {
+{{- range .Tables}}
+{{- $modelName := .Name}}
+{{- $modelNameCamel := .NameCamel}}
+{{- $modelNameLowerCamelPlural := .NameLowerCamelPlural}}
+{{- $openDelim := "{" }}
+{{- $closeDelim := "}" }}
+  rpc List{{.NameCamelPlural}}(List{{.NameCamelPlural}}Request) returns (List{{.NameCamelPlural}}Response) {
+    option (google.api.http) = {
+      get: "/api/v1/{{.NameLowerCamelPlural}}"
+    {{- range .Fields}}
+    {{- if eq .JoinType "BelongTo" }}
+      additional_bindings {
+        // The `parent` captures the parent resource name, such as "{{.NameLowerCamelPlural}}/id".
+        get: "/api/v1/{parent={{.NameLowerCamelPlural}}/*}/{{ $modelNameLowerCamelPlural }}"
+      } 
+    {{- end}}
+    {{- end}}
+    };
+  }
+
+{{- range .Fields}}
+{{- if or .IsPrimaryKey .IsUnique }}
+  rpc Get{{ $modelNameCamel }}By{{ .NameCamel }}(Get{{ $modelNameCamel }}By{{ .NameCamel }}Request) returns ({{ $modelNameCamel }}) {
+    option (google.api.http) = {
+      get: "/api/v1/{{ $modelNameLowerCamelPlural }}:by{{ .NameCamel }}/{{ $openDelim }}{{ .NameLowerCamel }}{{ $closeDelim }}"
+    };
+  }
+{{- end}}
+{{- end}}
+
+  rpc Create{{.NameCamel}}(Create{{.NameCamel}}Request) returns ({{.NameCamel}}) {
+    option (google.api.http) = {
+      post: "/api/v1/{{.NameLowerCamelPlural}}"
+      body: "{{.NameSnake}}"
+    };
+  }
+
+  rpc Update{{.NameCamel}}(Update{{.NameCamel}}Request) returns ({{.NameCamel}}) {
+    option (google.api.http) = {
+      patch: "/api/v1/{{.NameLowerCamelPlural}}"
+      body: "{{.NameSnake}}"
+    };
+  }
+
+  rpc Delete{{.NameCamel}}(Delete{{.NameCamel}}Request) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/v1/{{.NameLowerCamelPlural}}/{id}"
+    };
+  }
+
+  {{- end}}
+}
+
+{{- range .Tables}}
+{{- $modelName := .Name}}
+{{- $modelNameCamel := .NameCamel}}
+message {{.NameCamel}} {
+	{{- range $index, $field := .Fields}}
+    {{- $type := ""}}
+    {{- $behavior := ""}}
+    {{- $associationModel := $field.RefTable}}
+
+    {{- if eq $field.JoinType "None" }}
+      {{- $type = $field.MetaType.ProtobufType }}
+      {{- if eq $field.NameCamel "CreatedAt" "UpdatedAt" }}
+        {{- $behavior = " [(google.api.field_behavior) = OUTPUT_ONLY]"}}
+	    {{- end}}
+    {{- else }}
+      {{- $type = (printf "%s" $associationModel.NameCamel)}}
+    {{- end }}
+
+    {{- if eq $field.JoinType "ManyToMany" "HasMany" }}
+  repeated {{$type}} {{ $field.NameSnakePlural }} = {{add $index 1}}{{$behavior}};
+    {{- else }}
+  {{$type}} {{ $field.NameSnake }} = {{add $index 1}}{{$behavior}};
+	  {{- end}}
+	{{- end}}
+}
+
+message {{.NameCamel}}FilterInput {
+  {{.NameCamel}}FilterInput NOT = 1;
+  repeated {{.NameCamel}}FilterInput AND = 2;
+  repeated {{.NameCamel}}FilterInput OR = 3;
+	{{- range $index, $field := .Fields}}
+  {{- if and (not .IsUnique) .IsIndex }}
+  {{$modelNameCamel}}Op{{$field.NameCamel}}Input {{$field.NameLowerCamel}} = {{add $index 3}};
+  {{- end}}
+  {{- end}}
+}
+
+{{- range .Fields}}
+{{- if and (not .IsUnique) .IsIndex }}
+{{- $t := index $extra.pbwrappertype .MetaType.ProtobufType }}
+message {{$modelNameCamel}}Op{{.NameCamel}}Input {
+  {{- range $index, $operation := .Operations}}
+  {{- if eq $operation "In" }}
+    {{- $t = (printf "repeated %s" $t) }}
+  {{- end }}
+  {{$t}} {{$operation}} = {{add $index 1}};
+  {{- end}}
+}
+{{- end}}
+{{- end}}
+
+message List{{.NameCamelPlural}}Request {
+  enum View {
+    VIEW_UNSPECIFIED = 0;
+
+    BASIC = 1;
+
+    WITH_EDGES = 2;
+  }
+
+  // The parent resource name, for example, "shelves/shelf1".
+  string parent = 1;
+
+  // The maximum number of items to return.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous List request, if any.
+  string page_token = 3;
+
+  {{.NameCamel}}FilterInput filter = 4;
+  // The string value should follow SQL syntax: comma separated list of fields.
+  // For example: "foo,bar". The default sorting order is ascending. To specify
+  // descending order for a field, a suffix " desc" should be appended to the
+  // field name. For example: "foo desc,bar". Redundant space characters in the
+  // syntax are insignificant. "foo,bar desc" and "  foo ,  bar  desc  " are
+  // equivalent.
+  string order_by = 5;
+
+  View view = 6;
+}
+
+message List{{.NameCamelPlural}}Response {
+  // The field name should match the noun "{{.NameCamel}}" in the method name.
+  // There will be a maximum number of items returned based on the page_size
+  // field in the request.
+  repeated {{.NameCamel}} {{.NameLowerCamelPlural}} = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  int32 total_count = 3;
+}
+
+{{- range .Fields}}
+{{- if or .IsPrimaryKey .IsUnique }}
+message Get{{ $modelNameCamel }}By{{ .NameCamel }}Request {
+  enum View {
+    VIEW_UNSPECIFIED = 0;
+
+    BASIC = 1;
+
+    WITH_EDGES = 2;
+  }
+
+  // The field will contain name of the resource requested.
+  string {{ .NameSnake }} = 1;
+  View view = 2;
+}
+{{- end}}
+{{- end}}
+
+message Create{{.NameCamel}}Request {
+  // The parent resource name where the {{.NameCamel}} is to be created.
+  string parent = 1;
+
+  // The {{.NameCamel}} resource to create.
+  // The field name should match the Noun in the method name.
+  {{.NameCamel}} {{.NameSnake}} = 2;
+}
+
+message Update{{.NameCamel}}Request {
+  // The {{.NameCamel}} resource which replaces the resource on the server.
+  {{.NameCamel}} {{.NameSnake}} = 1;
+
+  // The update mask applies to the resource. For the `FieldMask` definition,
+  // see
+  // https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#fieldmask
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message Delete{{.NameCamel}}Request {
+  // The resource id of the {{.NameCamel}} to be deleted.
+  string id = 1;
+}
+
+{{- end}}

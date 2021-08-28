@@ -1,0 +1,156 @@
+package testgorm
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/bxcodec/faker/v3"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
+
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+	"{{ .Extra.pkgpath }}/models"
+	"{{ .Extra.pkgpath }}/test"
+)
+
+{{- $model := .}}
+
+func createTest{{ .NameCamel}}(t *testing.T, operationContext context.Context, test{{ .NameCamel}} *models.{{ .NameCamel}}) *pb.{{ .NameCamel}} {
+	resp, err := svc.Create{{ .NameCamel}}(operationContext, &pb.Create{{ .NameCamel}}Request{
+		{{ .NameCamel}}: test{{ .NameCamel}}.ToPB(),
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.NotEmpty(t, resp.Id)
+
+	return resp
+}
+
+func TestCreate{{ .NameCamel}}(t *testing.T) {
+	contextWithTimeOut, cancelFn := context.WithTimeout(context.Background(), deadlinePerTest)
+	defer cancelFn()
+	truncateTables(t)
+
+	createTest{{ .NameCamel}}(t, contextWithTimeOut, test.Test{{ .NameCamelPlural }}[0])
+}
+
+func assert{{ .NameCamel}}Equal(t *testing.T, expected *pb.{{ .NameCamel}}, actual *pb.{{ .NameCamel}}) {
+	{{- range $field := .Fields}}
+		{{- if eq .JoinType "None" }}
+			{{- if and (not .IsPrimaryKey ) (not .IsForeignKey ) }}
+				{{- if not (eq .NameCamel "CreatedAt" "UpdatedAt" ) }}
+					assert.Equal(t, expected.{{ $field.NameCamel}}, actual.{{ $field.NameCamel}})
+				{{- end}}
+			{{- end}}
+		{{- end}}
+	{{- end}}
+}
+
+func TestList{{ .NameCamelPlural }}(t *testing.T) {
+	contextWithTimeOut, cancelFn := context.WithTimeout(context.Background(), deadlinePerTest)
+	defer cancelFn()
+	truncateTables(t)
+	test{{ .NameCamel}}1 := createTest{{ .NameCamel}}(t, contextWithTimeOut, test.Test{{ .NameCamelPlural }}[0])
+	time.Sleep(time.Second)
+
+	test{{ .NameCamel}}2 := createTest{{ .NameCamel}}(t, contextWithTimeOut, test.Test{{ .NameCamelPlural }}[1])
+
+	req := &pb.List{{ .NameCamelPlural }}Request{
+		PageSize: 6,
+		OrderBy:  "created_at asc",
+	}
+	resp, err := svc.List{{ .NameCamelPlural }}(contextWithTimeOut, req)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Len(t, resp.{{ .NameCamelPlural }}, 2)
+	assert.Equal(t, resp.TotalCount, int64(2))
+	assert{{ .NameCamel}}Equal(t, test{{ .NameCamel}}1, resp.{{ .NameCamelPlural }}[0])
+	assert{{ .NameCamel}}Equal(t, test{{ .NameCamel}}2, resp.{{ .NameCamelPlural }}[1])
+}
+
+{{- range .Fields}}
+{{- if or .IsPrimaryKey .IsUnique }}
+	func TestGet{{ $model.NameCamel }}By{{ .NameCamel }}(t *testing.T) {
+		contextWithTimeOut, cancelFn := context.WithTimeout(context.Background(), deadlinePerTest)
+		defer cancelFn()
+		truncateTables(t)
+
+		test{{ $model.NameCamel }} := createTest{{ $model.NameCamel }}(t, contextWithTimeOut, test.Test{{ $model.NameCamelPlural }}[0])
+
+		getResponse, err := svc.Get{{ $model.NameCamel }}By{{ .NameCamel }}(contextWithTimeOut, &pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request{ {{- .NameCamel }}: test{{ $model.NameCamel }}.{{ .NameCamel }}})
+		assert.NoError(t, err)
+		assert.NotNil(t, getResponse)
+		assert{{ $model.NameCamel }}Equal(t, test{{ $model.NameCamel }}, getResponse)
+		// assert.Len(t, getResponse.Metadata, len(test{{ $model.NameCamel }}.Metadata))
+		// assert.Len(t, getResponse.Credentials, len(test{{ $model.NameCamel }}.Credentials))
+		// assert.Len(t, getResponse.Groups, len(test{{ $model.NameCamel }}.Groups))
+		// assert.Len(t, getResponse.RecoveryAddresses, len(test{{ $model.NameCamel }}.RecoveryAddresses))
+		// assert.Len(t, getResponse.VerifiableAddresses, len(test{{ $model.NameCamel }}.VerifiableAddresses))
+
+		getResponse, err = svc.Get{{ $model.NameCamel }}By{{ .NameCamel }}(contextWithTimeOut, &pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request{ {{- .NameCamel }}: ""})
+		assertResponseCodes(t, err, codes.InvalidArgument)
+		assert.Nil(t, getResponse)
+
+		getResponse, err = svc.Get{{ $model.NameCamel }}By{{ .NameCamel }}(contextWithTimeOut, nil)
+		assertResponseCodes(t, err, codes.InvalidArgument)
+		assert.Nil(t, getResponse)
+
+	}
+{{- end}}
+{{- end}}
+
+func TestUpdate{{ .NameCamel}}(t *testing.T) {
+	contextWithTimeOut, cancelFn := context.WithTimeout(context.Background(), deadlinePerTest)
+	defer cancelFn()
+	truncateTables(t)
+
+	test{{ .NameCamel}} := createTest{{ .NameCamel}}(t, contextWithTimeOut, test.Test{{ .NameCamelPlural }}[0])
+
+	{{- range .Fields}}
+		{{- if eq .JoinType "None" }}
+			{{- if and (not .IsPrimaryKey ) (not .IsForeignKey ) }}
+				{{- if not (eq .NameCamel "CreatedAt" "UpdatedAt" ) }}
+					err = faker.FakeData(&test{{ $model.NameCamel}}.{{ .NameCamel}})
+					assert.NoError(t, err)
+				{{- end}}
+			{{- end}}
+		{{- end}}
+	{{- end}}
+
+	updateResponse, err := svc.Update{{ .NameCamel}}(contextWithTimeOut, &pb.Update{{ .NameCamel}}Request{
+		{{ .NameCamel}}: test{{ .NameCamel}},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, updateResponse)
+
+	getResponse, err := svc.Get{{ .NameCamel}}By{{ $model.PrimaryKeyField.NameCamel }}(contextWithTimeOut, &pb.Get{{ .NameCamel}}By{{ $model.PrimaryKeyField.NameCamel }}Request{ {{- $model.PrimaryKeyField.NameCamel }}: test{{ .NameCamel}}.{{ $model.PrimaryKeyField.NameCamel -}} })
+	assert.NoError(t, err)
+	assert.NotNil(t, getResponse)
+
+	assert{{ .NameCamel}}Equal(t, test{{ .NameCamel}}, getResponse)
+}
+
+func TestDelete{{ .NameCamel}}(t *testing.T) {
+	contextWithTimeOut, cancelFn := context.WithTimeout(context.Background(), deadlinePerTest)
+	defer cancelFn()
+	truncateTables(t)
+
+	test{{ .NameCamel}} := createTest{{ .NameCamel}}(t, contextWithTimeOut, test.Test{{ .NameCamelPlural }}[0])
+
+	deleteResponse, err := svc.Delete{{ .NameCamel}}(contextWithTimeOut, &pb.Delete{{ .NameCamel}}Request{Id: test{{ .NameCamel}}.Id})
+	assert.NoError(t, err)
+	assert.NotNil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ .NameCamel}}(contextWithTimeOut, &pb.Delete{{ .NameCamel}}Request{Id: ""})
+	assertResponseCodes(t, err, codes.InvalidArgument)
+	assert.Nil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ .NameCamel}}(contextWithTimeOut, nil)
+	assertResponseCodes(t, err, codes.InvalidArgument)
+	assert.Nil(t, deleteResponse)
+
+	deleteResponse, err = svc.Delete{{ .NameCamel}}(contextWithTimeOut, &pb.Delete{{ .NameCamel}}Request{Id: "unknown"})
+	assertResponseCodes(t, err, codes.NotFound)
+	assert.Nil(t, deleteResponse)
+}

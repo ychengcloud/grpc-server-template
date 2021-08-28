@@ -1,0 +1,5 @@
+module {{ .Extra.pkgpath }}
+
+go 1.17
+
+replace {{ .Extra.protopkg }} => {{ .Extra.protopath }}

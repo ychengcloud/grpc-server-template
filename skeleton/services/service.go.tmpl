@@ -1,0 +1,17 @@
+package services
+
+import (
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+	"{{ .Extra.pkgpath }}/repositories"
+)
+
+type {{ .Extra.servicename }}Service struct {
+	pb.{{ .Extra.servicename }}ServiceServer
+	repo repositories.Repository
+}
+
+func New{{ .Extra.servicename }}Service(repo repositories.Repository) *{{ .Extra.servicename }}Service {
+	return &{{ .Extra.servicename }}Service{
+		repo: repo,
+	}
+}

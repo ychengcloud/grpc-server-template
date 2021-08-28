@@ -1,0 +1,69 @@
+package main
+
+import (
+	"os"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/oauth2"
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	"{{ .Extra.pkgpath }}/config"
+)
+
+func NewOauthConfig(cfg *config.Oauth2Config) *oauth2.Config {
+	endpoint := oauth2.Endpoint{
+		AuthURL:  cfg.Endpoint.AuthURL,
+		TokenURL: cfg.Endpoint.TokenURL,
+	}
+
+	config := &oauth2.Config{
+		ClientID:     cfg.Config.ClientID,
+		ClientSecret: cfg.Config.ClientSecret,
+		RedirectURL:  cfg.Config.RedirectURL,
+		Scopes:       cfg.Config.Scopes,
+		Endpoint:     endpoint,
+	}
+
+	return config
+}
+
+func NewLogger(cfg *config.LoggerConfig) (*zap.Logger, error) {
+	var (
+		err    error
+		level  = zap.NewAtomicLevel()
+		logger *zap.Logger
+	)
+
+	err = level.UnmarshalText([]byte(cfg.Level))
+	if err != nil {
+		return nil, err
+	}
+
+	fw := zapcore.AddSync(&lumberjack.Logger{
+		Filename:   cfg.Filename,
+		MaxSize:    cfg.MaxSize, // megabytes
+		MaxBackups: cfg.MaxBackups,
+		MaxAge:     cfg.MaxAge, // days
+	})
+
+	cw := zapcore.Lock(os.Stdout)
+
+	// file core 采用jsonEncoder
+	cores := make([]zapcore.Core, 0, 2)
+	je := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+	cores = append(cores, zapcore.NewCore(je, fw, level))
+
+	// stdout core 采用 ConsoleEncoder
+	if cfg.Stdout {
+		ce := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
+		cores = append(cores, zapcore.NewCore(ce, cw, level))
+	}
+
+	core := zapcore.NewTee(cores...)
+	logger = zap.New(core)
+
+	zap.ReplaceGlobals(logger)
+
+	return logger, err
+}

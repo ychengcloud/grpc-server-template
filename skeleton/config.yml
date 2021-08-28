@@ -1,0 +1,30 @@
+app:
+  name: xihe
+
+  port: 11000
+  gatewayPort: 11010
+
+db:
+  dialect: mysql
+  mysql:
+    name: taiyi
+logger:
+  filename: /tmp/taiyi.log
+jwt:
+  # dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64 -w 0 | rev | cut -b 2- | rev
+  # signingKey: GRuHhzxQm7z0H7jFBHxd0x2UEjvJHgt+286nnJCOHYw
+  contextKey: users
+  hydraKeysUri: http://localhost:4445/keys/hydra.openid.id-token
+  tokenType: bearer
+  signingKey: YOUCHENG
+  issuer: ycheng.pro
+  claimKey: claim
+  signingMethod: HS512
+  # seconds
+  expired: 1000000
+oauth:
+  authURL: "http://localhost:4444/oauth2/auth"
+  tokenURL: "http://localhost:4444/oauth2/token"
+  redirectURL: "http://localhost:3001/auth/callback"
+  clientID: "myclient5"
+  clientSecret: "mysecret5"
