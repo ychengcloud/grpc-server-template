@@ -2,7 +2,6 @@ app:
   name: xihe
 
   port: 11000
-  gatewayPort: 11010
 
 db:
   dialect: mysql
@@ -10,6 +9,17 @@ db:
     name: taiyi
 logger:
   filename: /tmp/taiyi.log
+probes:
+  # 是否开启 Kubernetes probes, 默认 false
+  enable: true
+
+prometheus:
+  # 是否开启 Prometheus, 默认 false
+  enable: true
+
+tracing: 
+  # 是否开启 opentracing, 默认 false
+  enable: false
 jwt:
   # dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64 -w 0 | rev | cut -b 2- | rev
   # signingKey: GRuHhzxQm7z0H7jFBHxd0x2UEjvJHgt+286nnJCOHYw

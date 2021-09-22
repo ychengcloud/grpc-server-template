@@ -3,23 +3,33 @@ package repositories
 import (
 	"context"
 
-	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
 	"{{ .Extra.pkgpath }}/models"
 )
 
 type Repository interface {
 {{- range .Tables}}
-{{- $tableNameCamel := .NameCamel}}
-
-	List{{.NameCamelPlural}}(ctx context.Context, parent string, filter *pb.{{ .NameCamel }}FilterInput, orderBy string, count int32, token string) (accounts []*models.{{.NameCamel}}, nextToken string, totalCount int64, err error)
+	{{- $model := .}}
+	List{{.NameCamelPlural}}(ctx context.Context, parent string, parentName string, filter *models.{{ .NameCamel }}FilterInput, orderBy string, count int32, token string) (accounts []*models.{{.NameCamel}}, nextToken string, totalCount int64, err error)
 	Create{{.NameCamel}}(ctx context.Context, {{.NameLowerCamel}} *models.{{.NameCamel}}) (*models.{{.NameCamel}}, error)
+	BatchCreate{{.NameCamel}}(ctx context.Context, {{.NameLowerCamelPlural}} []*models.{{.NameCamel}}) ([]*models.{{.NameCamel}}, error)
 	
-{{- range .Fields}}
-{{- if or .IsPrimaryKey .IsUnique }}
-	Get{{ $tableNameCamel }}By{{ .NameCamel }}(ctx context.Context, {{ .NameLowerCamel }} string, withEdges bool) (*models.{{ $tableNameCamel }}, error)
-{{- end}}
-{{- end}}
-	Update{{.NameCamel}}(ctx context.Context, {{.NameLowerCamel}} *models.{{.NameCamel}}) (*models.{{.NameCamel}}, error)
-	Delete{{.NameCamel}}(ctx context.Context, id string) (*models.{{.NameCamel}}, error)
+	{{- range .Fields}}
+		{{- if or .IsPrimaryKey .IsUnique }}
+			Get{{ $model.NameCamel }}By{{ .NameCamel }}(ctx context.Context, {{ .NameLowerCamel }} string, withEdges bool) (*models.{{ $model.NameCamel }}, error)
+			BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}(ctx context.Context, {{ .NameLowerCamelPlural }} []{{ $model.PrimaryKeyField.MetaType.GoType }}, withEdges bool) ([]*models.{{ $model.NameCamel }}, error)
+
+		{{- end}}
+		{{- if eq .JoinType "ManyToMany" }}
+			{{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}(ctx context.Context, {{ .JoinTable.ForeignKey.NameLowerCamel }} {{ .JoinTable.ForeignKey.MetaType.GoType }}, {{ .JoinTable.References.NameLowerCamelPlural }} []{{ .JoinTable.References.MetaType.GoType }} )  error
+			{{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}(ctx context.Context, {{ .JoinTable.ForeignKey.NameLowerCamel }} {{ .JoinTable.ForeignKey.MetaType.GoType }}, {{ .JoinTable.References.NameLowerCamelPlural }} []{{ .JoinTable.References.MetaType.GoType }} )  error 
+				{{- if .IsRemote }}
+					List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}(ctx context.Context, parent string, orderBy string, count int32, token string) ({{ .JoinTable.References.NameLowerCamelPlural }} []{{ .JoinTable.References.MetaType.ProtobufType }}, nextToken string, totalCount int64, err error)
+				{{- end}}
+		{{- end}}
+	{{- end}}
+	Update{{.NameCamel}}(ctx context.Context, {{.NameLowerCamel}} *models.{{.NameCamel}}, updateMask []string) (*models.{{.NameCamel}}, error)
+	BatchUpdate{{.NameCamel}}(ctx context.Context, {{ .NameLowerCamelPlural }} []*models.{{.NameCamel}}, updateMask []string) ([]*models.{{.NameCamel}}, error)
+	Delete{{.NameCamel}}(ctx context.Context, {{ $model.PrimaryKeyField.NameLowerCamel }} {{ $model.PrimaryKeyField.MetaType.GoType }}) error
+	BatchDelete{{.NameCamel}}(ctx context.Context, {{ $model.PrimaryKeyField.NameLowerCamelPlural }} []{{ $model.PrimaryKeyField.MetaType.GoType }}) error
 {{- end}}
 }

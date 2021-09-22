@@ -1,0 +1,33 @@
+package main
+
+import (
+	"flag"
+	"log"
+	"strings"
+
+	"{{ .Extra.pkgpath }}/config"
+	"{{ .Extra.pkgpath }}/server"
+
+)
+
+var configFile = flag.String("c", "config", "set config file")
+
+func main() {
+	flag.Parse()
+
+	cfg, err := config.New(*configFile, strings.ToUpper("{{ .Extra.servicename }}_"))
+	if err != nil {
+		log.Fatalln("Failed to listen:", err)
+
+	}
+
+	logger, err := NewLogger(&cfg.LoggerConfig)
+	if err != nil {
+		log.Fatalln("Failed to listen:", err)
+
+	}
+
+	s := server.NewServer(logger, cfg)
+
+	logger.Sugar().Fatal(s.Run())
+}

@@ -4,26 +4,26 @@ import (
 	"fmt"
 
 	"github.com/spf13/viper"
-	"github.com/uber/jaeger-client-go/config"
+	jagercfg "github.com/uber/jaeger-client-go/config"
 	"golang.org/x/oauth2"
 )
 
 type MysqlOptions struct {
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
+	User     string `yaml:"user" mapstructure:"user"`
+	Password string `yaml:"password" mapstructure:"password"`
+	Host     string `yaml:"host" mapstructure:"host"`
+	Port     int    `yaml:"port" mapstructure:"port"`
 	Name     string `yaml:"name" mapstructure:"name"`
-	Charset  string `yaml:"charset"`
+	Charset  string `yaml:"charset" mapstructure:"charset"`
 }
 
 type SqliteOptions struct {
-	Name string `yaml:"name"`
+	Name string `yaml:"name" mapstructure:"name"`
 }
 
 type DatabaseConfig struct {
-	Dialect     string `yaml:"dialect"`
-	AutoMigrate bool   `yaml:"autoMigrate"`
+	Dialect     string `yaml:"dialect" mapstructure:"dialect"`
+	AutoMigrate bool   `yaml:"autoMigrate" mapstructure:"autoMigrate"`
 	debug       bool
 
 	MysqlOptions  MysqlOptions  `yaml:"mysql" mapstructure:"mysql"`
@@ -31,47 +31,60 @@ type DatabaseConfig struct {
 }
 
 type LoggerConfig struct {
-	Filename   string
-	MaxSize    int
-	MaxBackups int
-	MaxAge     int
-	Level      string
-	Stdout     bool
+	Filename   string `yaml:"filename" mapstructure:"filename"`
+	MaxSize    int    `yaml:"maxSize" mapstructure:"maxSize"`
+	MaxBackups int    `yaml:"maxBackups" mapstructure:"maxBackups"`
+	MaxAge     int    `yaml:"maxAge" mapstructure:"maxAge"`
+	Level      string `yaml:"level" mapstructure:"level"`
+	Stdout     bool   `yaml:"stdout" mapstructure:"stdout"`
 }
 
 type Oauth2Config struct {
-	Endpoint oauth2.Endpoint `mapstructure:"endpoint"`
-	Config   oauth2.Config   `mapstructure:"config"`
+	Endpoint oauth2.Endpoint `yaml:"endpoint" mapstructure:"endpoint"`
+	Config   oauth2.Config   `yaml:"config" mapstructure:"config"`
+}
+
+type ProbesConfig struct {
+	Enable        bool   `yaml:"enable" mapstructure:"enable"`
+	ReadinessPath string `yaml:"readinessPath" mapstructure:"readinessPath"`
+	LivenessPath  string `yaml:"livenessPath" mapstructure:"livenessPath"`
+	Port          int    `yaml:"port" mapstructure:"port"`
+}
+
+type PrometheusConfig struct {
+	//是否开启 Prometheus, 默认 false
+	Enable               bool   `yaml:"enable" mapstructure:"enable"`
+	Path                 string `yaml:"path" mapstructure:"path"`
+	Port                 int    `yaml:"port" mapstructure:"port"`
+	CheckIntervalSeconds int    `yaml:"checkIntervalSeconds" mapstructure:"checkIntervalSeconds"`
+}
+
+type TracingConfig struct {
+	//是否开启 opentracing, 默认 false
+	Enable       bool                   `yaml:"enable" mapstructure:"enable"`
+	JaegerConfig jagercfg.Configuration `yaml:"jaeger" mapstructure:"jaeger"`
 }
 
 type AppConfig struct {
 	Name string
 	// 运行模式 1. debug 2. release， 默认 release
 	Mode string
-	//是否开启 opentracing, 默认 false
-	Tracing bool
-	//是否开启 Prometheus, 默认 false
-	Promtheus bool
 	//是否能访问Api文档, 默认 false
 	Doc bool
-	//是否能访问Golang Pprof, 默认 false
-	Pprof bool
 	//绑定 IP
 	Host string `yaml:"host" mapstructure:"host"`
 	//绑定 Port
 	Port string `yaml:"host" mapstructure:"port"`
-	//绑定 IP
-	GatewayHost string `yaml:"gatewayHost" mapstructure:"gatewayHost"`
-	//绑定 Port
-	GatewayPort string `yaml:"gatewayPort" mapstructure:"gatewayPort"`
 }
 type Config struct {
-	Path           string               `mapstructure:""`
-	AppConfig      AppConfig            `mapstructure:"app"`
-	JaegerConfig   config.Configuration `mapstructure:"jaeger"`
-	LoggerConfig   LoggerConfig         `mapstructure:"logger"`
-	DatabaseConfig DatabaseConfig       `yaml:"db" mapstructure:"db"`
-	Oauth2Config   Oauth2Config         `mapstructure:"oauth"`
+	Path             string           `yaml:"-" mapstructure:"-"`
+	AppConfig        AppConfig        `yaml:"app" mapstructure:"app"`
+	LoggerConfig     LoggerConfig     `yaml:"logger" mapstructure:"logger"`
+	DatabaseConfig   DatabaseConfig   `yaml:"db" mapstructure:"db"`
+	Oauth2Config     Oauth2Config     `yaml:"oauth" mapstructure:"oauth"`
+	ProbesConfig     ProbesConfig     `yaml:"probes" mapstructure:"probes"`
+	PrometheusConfig PrometheusConfig `yaml:"prometheus" mapstructure:"prometheus"`
+	TracingConfig    TracingConfig    `yaml:"tracing" mapstructure:"tracing"`
 }
 
 // Init 初始化viper

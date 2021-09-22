@@ -3,7 +3,7 @@ BUF_VERSION:=0.43.2
 
 .PHONY: run
 run:
-	go run ./cmd/$(app) ;
+	go run ./cmd ;
 
 .PHONY: watch
 watch:
@@ -16,7 +16,7 @@ test:
 .PHONY: build
 build: 
 	go mod tidy; \
-	GOOS=linux GOARCH="amd64" go build -o dist/$(app)-linux-amd64 ./cmd/$(app)/; 
+	GOOS=linux GOARCH="amd64" go build -o dist/$(app)-linux-amd64 ./cmd ; 
 
 .PHONY: cover
 cover: test

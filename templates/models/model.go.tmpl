@@ -21,49 +21,74 @@ import (
 
 type {{.NameCamel}} struct {
 	{{- range .Fields}}
-		{{- $name := .NameCamel}}
-		{{- $type := ""}}
-		{{- $tags := (printf "json:\"%s\" gorm:\"%s" .NameLowerCamel .NameLowerCamel)}}
-		{{- $associationModel := .RefTable}}
-		{{- if eq .JoinType "None" }}
-			{{- $type = .MetaType.GoType }}
-		{{- end }}
-		{{- if or (eq .JoinType "BelongTo") (eq .JoinType "HasOne") }}
-			{{- $name = .NameCamel}}
-			{{- $type = (printf "%s%s" "*" $associationModel.NameCamel)}}
-		{{- end}}
-		{{- if or (eq .JoinType "ManyToMany") (eq .JoinType "HasMany") }}
-			{{- $name = .NameCamelPlural}}
-			{{- $type = (printf "%s%s" "[]*" $associationModel.NameCamel)}}
-			{{- $tags = (printf "json:\"%s\" gorm:\"%s" .NameLowerCamelPlural .NameLowerCamelPlural)}}
-		{{- end}}
-		{{- if .IsPrimaryKey }}
-			{{- $tags = (printf "%s;primaryKey" $tags)}}
-		{{- end}}
-		{{- if .IsAutoIncrement }}
-			{{- $tags = (printf "%s;autoIncrement" $tags)}}
-		{{- end}}
-		{{- if gt .MaxLength  0 }}
-			{{- $tags = (printf "%s;size:%d" $tags .MaxLength)}}
-		{{- end}}
-		{{- if not (eq .JoinType "None") }}
-			{{- $tags = (printf "%s;foreignKey:%s;references:%s" $tags (pascal .ForeignKey) (pascal .References))}}
-		{{- end}}
-		{{- if eq .JoinType "ManyToMany" }}
-			{{- $tags = (printf "%s;many2many:%s;joinForeignKey:%s;joinReferences:%s" $tags (pascal .JoinTableName) (pascal .JoinForeignKey) (pascal .JoinReferences)) }}
-		{{- end}}
-		{{- if not (eq .JoinType "None") }}
-			{{- $tags = (printf "%s\" faker:\"-" $tags)}}
-		{{- else}}
-			{{- if and .IsPrimaryKey (eq $extra.primarykeytype "uuid") }}
-				{{- $tags = (printf "%s\" faker:\"uuid_hyphenated" $tags)}}
+		{{- if not .IsRemote }}
+			{{- $name := .NameCamel}}
+			{{- $type := ""}}
+			{{- $tags := (printf "json:\"%s\" gorm:\"%s" .NameLowerCamel .NameLowerCamel)}}
+			{{- if eq .JoinType "None" }}
+				{{- $type = .MetaType.GoType }}
+			{{- end }}
+			{{- if eq .JoinType "BelongTo" "HasOne" }}
+				{{- $name = .NameCamel}}
+				{{- $type = (printf "%s%s" "*" .RefTable.NameCamel)}}
 			{{- end}}
-		{{- end }}
-		{{- $tags = (printf "%s\" %s" $tags .Tags)}}
-		{{$name}} {{$type}} `{{$tags}}`
+			{{- if eq .JoinType "ManyToMany" "HasMany" }}
+				{{- $name = .NameCamelPlural}}
+				{{- $type = (printf "%s%s" "[]*" .RefTable.NameCamel)}}
+				{{- $tags = (printf "json:\"%s\" gorm:\"%s" .NameLowerCamelPlural .NameLowerCamelPlural)}}
+			{{- end}}
+			{{- if .IsPrimaryKey }}
+				{{- $tags = (printf "%s;primaryKey" $tags)}}
+			{{- end}}
+			{{- if .IsAutoIncrement }}
+				{{- $tags = (printf "%s;autoIncrement" $tags)}}
+			{{- end}}
+			{{- if gt .MaxLength  0 }}
+				{{- $tags = (printf "%s;size:%d" $tags .MaxLength)}}
+			{{- end}}
+			{{- if not (eq .JoinType "None") }}
+				{{- $tags = (printf "%s;foreignKey:%s;references:%s" $tags (pascal .ForeignKey) (pascal .References))}}
+			{{- end}}
+			{{- if eq .JoinType "ManyToMany" }}
+				{{- $tags = (printf "%s;many2many:%s;joinForeignKey:%s;joinReferences:%s" $tags .JoinTableName (pascal .JoinForeignKey) (pascal .JoinReferences)) }}
+			{{- end}}
+			{{- if not (eq .JoinType "None") }}
+				{{- $tags = (printf "%s\" faker:\"-" $tags)}}
+			{{- else}}
+				{{- if and .IsPrimaryKey (eq $extra.primarykeytype "uuid") }}
+					{{- $tags = (printf "%s\" faker:\"uuid_hyphenated" $tags)}}
+				{{- end}}
+			{{- end }}
+			{{- $tags = (printf "%s\" %s" $tags .Tags)}}
+			{{$name}} {{$type}} `{{$tags}}`
+		{{- end}}
 	{{- end}}
 }
 
+type {{.NameCamel}}FilterInput struct {
+	NOT	*{{.NameCamel}}FilterInput `json:"NOT"`
+	AND []*{{.NameCamel}}FilterInput `json:"AND"`
+	OR	[]*{{.NameCamel}}FilterInput `json:"OR"`
+	{{- range $index, $field := .Fields}}
+		{{- if and (not .IsUnique) .IsIndex }}
+			{{$field.NameCamel}} *{{$modelNameCamel}}Op{{$field.NameCamel}}Input `json:"{{$field.NameLowerCamel}}"`
+		{{- end}}
+	{{- end}}
+}
+
+{{- range .Fields}}
+{{- if and (not .IsUnique) .IsIndex }}
+	{{- $t := (printf "*%s" .MetaType.GoType) }}
+	type {{$modelNameCamel}}Op{{.NameCamel}}Input struct {
+		{{- range $index, $operation := ops . }}
+			{{- if eq $operation "In" }}
+				{{- $t = (printf "[]%s" $t) }}
+			{{- end }}
+			{{$operation}} {{$t}} `json:"{{$operation}}"`
+		{{- end}}
+	}
+{{- end}}
+{{- end}}
 
 //TableName
 func (m *{{.NameCamel}}) TableName() string {
@@ -74,7 +99,8 @@ func (m *{{.NameCamel}}) Valid() error {
 	return validate.Struct(m)
 }
 
-func (m *{{.NameCamel}}) ToORM({{.NameLowerCamel}} *pb.{{.NameCamel}}) *{{.NameCamel}} {
+func {{ .NameCamel }}ToORM({{.NameLowerCamel}} *pb.{{.NameCamel}}) *{{.NameCamel}} {
+	m := &{{ .NameCamel }}{}
 	{{- range .Fields}}
 		{{- if eq .JoinType "None"}}
 			m.{{.NameCamel}} = {{$modelNameLowerCamel}}.{{.NameCamel}}{{- if eq .MetaType.GoType "time.Time"}}.AsTime(){{- end}}
@@ -82,21 +108,19 @@ func (m *{{.NameCamel}}) ToORM({{.NameLowerCamel}} *pb.{{.NameCamel}}) *{{.NameC
 	{{- end}}
 
 	{{- range .Fields}}
-		{{- $associationModel := .RefTable}}
-		{{- if or (eq .JoinType "HasMany") (eq .JoinType "ManyToMany") }}
-
-			{{.NameLowerCamelPlural}} := make([]*{{$associationModel.NameCamel}}, len({{$modelNameLowerCamel}}.{{.NameCamelPlural}}))
-			for index, pb{{.NameCamel}} := range {{$modelNameLowerCamel}}.{{.NameCamelPlural}} {
-				node := &{{$associationModel.NameCamel}}{}
-				{{.NameLowerCamelPlural}}[index] = node.ToORM(pb{{.NameCamel}})
-			}
-			m.{{.NameCamelPlural}} = {{.NameLowerCamelPlural}}
-		{{- end}}
-		{{- if or (eq .JoinType "HasOne") (eq .JoinType "BelongTo") }}
-		if {{$modelNameLowerCamel}}.{{.NameCamel}} != nil {
-			{{.NameLowerCamel}} := &{{$associationModel.NameCamel}}{}
-			m.{{.NameCamel}} = {{.NameLowerCamel}}.ToORM({{$modelNameLowerCamel}}.{{.NameCamel}})
-		}
+		{{- if not .IsRemote }}
+			{{- if eq .JoinType "ManyToMany" "HasMany" }}
+				{{.NameLowerCamelPlural}} := make([]*{{.RefTable.NameCamel}}, len({{$modelNameLowerCamel}}.{{.NameCamelPlural}}))
+				for index, pb{{.NameCamel}} := range {{$modelNameLowerCamel}}.{{.NameCamelPlural}} {
+					{{.NameLowerCamelPlural}}[index] = {{ .RefTable.NameCamel }}ToORM(pb{{.NameCamel}})
+				}
+				m.{{.NameCamelPlural}} = {{.NameLowerCamelPlural}}
+			{{- end}}
+			{{- if eq .JoinType "HasOne" "BelongTo" }}
+				if {{$modelNameLowerCamel}}.{{.NameCamel}} != nil {
+					m.{{.NameCamel}} = {{ .RefTable.NameCamel }}ToORM({{$modelNameLowerCamel}}.{{.NameCamel}})
+				}
+			{{- end}}
 		{{- end}}
 	{{- end}}
 	
@@ -121,13 +145,19 @@ func (m *{{.NameCamel}}) ToPB() *pb.{{.NameCamel}} {
 	}
 
 	{{- range .Fields}}
-		{{- if or (eq .JoinType "HasMany") (eq .JoinType "ManyToMany") }}
-			{{- $associationModel := .RefTable}}
-			pb{{.NameCamelPlural}} := make([]*pb.{{$associationModel.NameCamel}} , 0, len(m.{{.NameCamelPlural}}))
-			for _, {{.NameLowerCamel}} := range m.{{.NameCamelPlural}} {
-				pb{{.NameCamelPlural}} = append(pb{{.NameCamelPlural}}, {{.NameLowerCamel}}.ToPB())
-			}
-			pb{{$modelNameCamel}}.{{.NameCamelPlural}} = pb{{.NameCamelPlural}}
+		{{- if not .IsRemote }}
+			{{- if eq .JoinType "ManyToMany" "HasMany" }}
+				pb{{.NameCamelPlural}} := make([]*pb.{{.RefTable.NameCamel}} , 0, len(m.{{.NameCamelPlural}}))
+				for _, {{.NameLowerCamel}} := range m.{{.NameCamelPlural}} {
+					pb{{.NameCamelPlural}} = append(pb{{.NameCamelPlural}}, {{.NameLowerCamel}}.ToPB())
+				}
+				pb{{$modelNameCamel}}.{{.NameCamelPlural}} = pb{{.NameCamelPlural}}
+			{{- end}}
+			{{- if or (eq .JoinType "HasOne") (eq .JoinType "BelongTo") }}
+				if m.{{.NameCamel}} != nil {
+					pb{{$modelNameCamel}}.{{.NameCamel}} = m.{{.NameCamel}}.ToPB()
+				}
+			{{- end}}
 		{{- end}}
 	{{- end}}
 	return pb{{$modelNameCamel}}

@@ -1,0 +1,323 @@
+{{- $extra := .Extra }}
+syntax = "proto3";
+option go_package = "{{ $extra.protopkg }}/gen/go/{{ $extra.package }}/v1;{{ $extra.package }}";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+import "google/api/field_behavior.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+package {{ $extra.package }};
+
+// Generated according to https://cloud.google.com/apis/design/standard_methods
+service {{ .ProjectName }}Service {
+{{- range .Tables}}
+{{- $model := . }}
+  rpc List{{.NameCamelPlural}}(List{{.NameCamelPlural}}Request) returns (List{{ .NameCamelPlural }}Response) {
+    option (google.api.http) = {
+      get: "/api/v1/{{.NameLowerCamelPlural}}"
+    };
+  }
+
+  {{- range .Fields}}
+  {{- if eq .JoinType "BelongTo" "ManyToMany" }}
+  rpc List{{ $model.NameCamelPlural }}With{{ .NameCamel }}(List{{ $model.NameCamelPlural }}Request) returns (List{{ $model.NameCamelPlural }}Response) {
+    option (google.api.http) = {
+      get: "/api/v1/{{ .NameLowerCamelPlural }}/{parent}/{{ $model.NameLowerCamelPlural }}"
+    };
+  }
+  {{- end}}
+  {{- if and .IsRemote (eq .JoinType "ManyToMany") }}
+  rpc List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}(List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Request) returns (List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Response) {
+    option (google.api.http) = {
+      get: "/api/v1/{{ $model.NameLowerCamelPlural }}/{parent}/{{ .JoinTable.References.NameLowerCamelPlural }}"
+    };
+  }
+  {{- end}}
+  {{- end}}
+
+  {{- range .Fields}}
+  {{- if or .IsPrimaryKey .IsUnique }}
+  rpc Get{{ $model.NameCamel }}By{{ .NameCamel }}(Get{{ $model.NameCamel }}By{{ .NameCamel }}Request) returns ({{ $model.NameCamel }}) {
+    option (google.api.http) = {
+      get: "/api/v1/{{ $model.NameLowerCamelPlural }}:by{{ .NameCamel }}/{ {{- .NameLowerCamel -}} }"
+    };
+  }
+  rpc BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}(BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request) returns (Batch{{ $model.NameCamel }}Response) {
+    option (google.api.http) = {
+      post: "/api/v1/{{ $model.NameLowerCamelPlural }}:batchBy{{ .NameCamel }}"
+    };
+  }
+  {{- end}}
+  {{- end}}
+
+  rpc Create{{.NameCamel}}(Create{{.NameCamel}}Request) returns ({{.NameCamel}}) {
+    option (google.api.http) = {
+      post: "/api/v1/{{.NameLowerCamelPlural}}"
+      body: "{{.NameSnake}}"
+    };
+  }
+
+  rpc BatchCreate{{.NameCamel}}(BatchCreate{{.NameCamel}}Request) returns (Batch{{ $model.NameCamel }}Response) {
+    option (google.api.http) = {
+      post: "/api/v1/{{.NameLowerCamelPlural}}:batch"
+      body: "*"
+    };
+  }
+
+  rpc Update{{.NameCamel}}(Update{{.NameCamel}}Request) returns ({{.NameCamel}}) {
+    option (google.api.http) = {
+      patch: "/api/v1/{{.NameLowerCamelPlural}}"
+      body: "{{.NameSnake}}"
+    };
+  }
+
+  rpc BatchUpdate{{.NameCamel}}(BatchUpdate{{.NameCamel}}Request) returns (Batch{{ $model.NameCamel }}Response) {
+    option (google.api.http) = {
+      post: "/api/v1/{{.NameLowerCamelPlural}}:batch"
+      body: "*"
+    };
+  }
+
+  rpc Delete{{.NameCamel}}(Delete{{.NameCamel}}Request) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/v1/{{.NameLowerCamelPlural}}/{id}"
+    };
+  }
+
+  rpc BatchDelete{{.NameCamel}}(BatchDelete{{.NameCamel}}Request) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/v1/{{.NameLowerCamelPlural}}:batch"
+      body: "*"
+    };
+  }
+
+  {{- range .Fields}}
+  {{- if eq .JoinType "ManyToMany" }}
+  rpc {{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}({{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}Request) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/v1/{{ $model.NameLowerCamelPlural }}/{ {{- .JoinTable.ForeignKey.NameSnake -}} }/{{ .NameLowerCamelPlural }}:assign"
+      body: "*"
+    };
+  }
+
+  rpc {{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}({{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}Request) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/v1/{{ $model.NameLowerCamelPlural }}/{ {{- .JoinTable.ForeignKey.NameSnake -}} }/{{ .NameLowerCamelPlural }}:unassign"
+      body: "*"
+    };
+  }
+  {{- end}}
+  {{- end}}
+
+  {{- end}}
+}
+
+{{- range .Tables}}
+{{- $model := . }}
+message {{ $model.NameCamel }} {
+	{{- range $index, $field := .Fields}}
+    {{- $type := ""}}
+    {{- $behavior := ""}}
+    {{- $associationModel := $field.RefTable}}
+
+    {{- if eq $field.JoinType "None" }}
+      {{- $type = $field.MetaType.ProtobufType }}
+      {{- if eq $field.NameCamel "CreatedAt" "UpdatedAt" }}
+        {{- $behavior = " [(google.api.field_behavior) = OUTPUT_ONLY]"}}
+	    {{- end}}
+    {{- else }}
+      {{- if not .IsRemote }}
+      {{- $type = (printf "%s" $associationModel.NameCamel)}}
+	    {{- end}}
+    {{- end }}
+
+    {{- if eq $field.JoinType "ManyToMany" "HasMany" }}
+      {{- if not .IsRemote }}
+  repeated {{$type}} {{ $field.NameSnakePlural }} = {{add $index 1}}{{$behavior}};
+	    {{- end}}
+    {{- else }}
+  {{$type}} {{ $field.NameSnake }} = {{add $index 1}}{{$behavior}};
+	  {{- end}}
+	{{- end}}
+}
+
+message List{{.NameCamelPlural}}Request {
+  enum View {
+    VIEW_UNSPECIFIED = 0;
+
+    BASIC = 1;
+
+    WITH_EDGES = 2;
+  }
+
+  // The parent resource name, for example, "shelves/shelf1".
+  string parent = 1;
+
+  // The maximum number of items to return.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous List request, if any.
+  string page_token = 3;
+
+  string filter = 4;
+  // The string value should follow SQL syntax: comma separated list of fields.
+  // For example: "foo,bar". The default sorting order is ascending. To specify
+  // descending order for a field, a suffix " desc" should be appended to the
+  // field name. For example: "foo desc,bar". Redundant space characters in the
+  // syntax are insignificant. "foo,bar desc" and "  foo ,  bar  desc  " are
+  // equivalent.
+  string order_by = 5;
+
+  View view = 6;
+}
+
+message List{{.NameCamelPlural}}Response {
+  // The field name should match the noun "{{.NameCamel}}" in the method name.
+  // There will be a maximum number of items returned based on the page_size
+  // field in the request.
+  repeated {{.NameCamel}} {{.NameSnakePlural}} = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  int32 total_count = 3;
+}
+
+{{- range .Fields}}
+{{- if and .IsRemote (eq .JoinType "ManyToMany") }}
+message List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Request {
+  // The parent resource name, for example, "shelves/shelf1".
+  string parent = 1;
+
+  // The maximum number of items to return.
+  int32 page_size = 2;
+
+  // The next_page_token value returned from a previous List request, if any.
+  string page_token = 3;
+
+  // The string value should follow SQL syntax: comma separated list of fields.
+  // For example: "foo,bar". The default sorting order is ascending. To specify
+  // descending order for a field, a suffix " desc" should be appended to the
+  // field name. For example: "foo desc,bar". Redundant space characters in the
+  // syntax are insignificant. "foo,bar desc" and "  foo ,  bar  desc  " are
+  // equivalent.
+  string order_by = 4;
+}
+
+message List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Response {
+  // The field name should match the noun "{{.NameCamel}}" in the method name.
+  // There will be a maximum number of items returned based on the page_size
+  // field in the request.
+  repeated {{ .JoinTable.References.MetaType.ProtobufType }} {{ .JoinTable.References.NameSnakePlural }} = 1;
+
+  // Token to retrieve the next page of results, or empty if there are no more
+  // results in the list.
+  string next_page_token = 2;
+
+  int32 total_count = 3;
+}
+{{- end}}
+{{- if or .IsPrimaryKey .IsUnique }}
+message Get{{ $model.NameCamel }}By{{ .NameCamel }}Request {
+  enum View {
+    VIEW_UNSPECIFIED = 0;
+
+    BASIC = 1;
+
+    WITH_EDGES = 2;
+  }
+
+  // The field will contain name of the resource requested.
+  string {{ .NameSnake }} = 1;
+  View view = 2;
+}
+
+message BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request {
+  enum View {
+    VIEW_UNSPECIFIED = 0;
+
+    BASIC = 1;
+
+    WITH_EDGES = 2;
+  }
+
+  // The field will contain name of the resource requested.
+  repeated string {{ .NameSnakePlural }} = 1;
+  View view = 2;
+}
+{{- end}}
+{{- end}}
+
+message Batch{{ .NameCamel }}Response {
+  repeated {{.NameCamel}} {{.NameSnakePlural}} = 1;
+}
+
+message Create{{.NameCamel}}Request {
+  // The parent resource name where the {{.NameCamel}} is to be created.
+  string parent = 1;
+
+  // The {{.NameCamel}} resource to create.
+  // The field name should match the Noun in the method name.
+  {{.NameCamel}} {{.NameSnake}} = 2;
+}
+
+message BatchCreate{{.NameCamel}}Request {
+  // The parent resource name where the {{.NameCamel}} is to be created.
+  string parent = 1;
+
+  // The {{.NameCamel}} resource to create.
+  // The field name should match the Noun in the method name.
+  repeated {{ .NameCamel }} {{ .NameSnakePlural }} = 2;
+}
+
+message Update{{.NameCamel}}Request {
+  // The {{.NameCamel}} resource which replaces the resource on the server.
+  {{.NameCamel}} {{.NameSnake}} = 1;
+
+  // The update mask applies to the resource. For the `FieldMask` definition,
+  // see
+  // https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#fieldmask
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message BatchUpdate{{.NameCamel}}Request {
+  // The {{.NameCamel}} resource which replaces the resource on the server.
+  repeated {{.NameCamel}} {{.NameSnakePlural}} = 1;
+
+  // The update mask applies to the resource. For the `FieldMask` definition,
+  // see
+  // https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#fieldmask
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message Delete{{.NameCamel}}Request {
+  // The resource id of the {{.NameCamel}} to be deleted.
+  {{ .PrimaryKeyField.MetaType.ProtobufType }} {{ .PrimaryKeyField.NameSnake }} = 1;
+}
+
+message BatchDelete{{.NameCamel}}Request {
+  // The resource id of the {{.NameCamel}} to be deleted.
+  repeated {{ .PrimaryKeyField.MetaType.ProtobufType }} {{ .PrimaryKeyField.NameSnakePlural }} = 1;
+}
+
+{{- range .Fields}}
+{{- if eq .JoinType "ManyToMany" }}
+message {{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}Request{
+  // The resource id of the {{.NameCamelPlural}} to be deleted.
+  {{ .JoinTable.ForeignKey.MetaType.ProtobufType }} {{ .JoinTable.ForeignKey.NameSnake }} = 1;
+  repeated {{ .JoinTable.References.MetaType.ProtobufType }} {{ .JoinTable.References.NameSnakePlural }} = 2;
+}
+
+message {{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}Request{
+    // The resource id of the {{.NameCamelPlural}} to be deleted.
+  {{ .JoinTable.ForeignKey.MetaType.ProtobufType }} {{ .JoinTable.ForeignKey.NameSnake }} = 1;
+  repeated {{ .JoinTable.References.MetaType.ProtobufType }} {{ .JoinTable.References.NameSnakePlural }} = 2;
+}
+{{- end}}
+{{- end}}
+
+{{- end}}

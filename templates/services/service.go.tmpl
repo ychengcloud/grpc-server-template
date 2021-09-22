@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -15,57 +16,121 @@ import (
 )
 
 {{- $extra := .Extra}}
-{{- $modelName := .Name}}
-{{- $modelNameCamel := .NameCamel}}
-{{- $modelNameCamelPlural := .NameCamelPlural}}
-{{- $modelNameLowerCamelPlural := .NameLowerCamelPlural}}
-{{- $modelNameLowerCamel := .NameLowerCamel}}
+{{- $model := .}}
 {{- $primaryKeyField := .PrimaryKeyField}}
 
-func (s *{{ $extra.servicename }}Service) List{{ $modelNameCamelPlural }}(ctx context.Context, req *pb.List{{ $modelNameCamelPlural }}Request) (*pb.List{{ $modelNameCamelPlural }}Response, error) {
+func (s *{{ $extra.servicename }}Service) list{{ $model.NameCamelPlural }}(ctx context.Context, parent string, req *pb.List{{ $model.NameCamelPlural }}Request) (*pb.List{{ $model.NameCamelPlural }}Response, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
 	}
 
-    {{ $modelNameLowerCamelPlural }}, nextPageToken, totalCount, err := s.repo.List{{ $modelNameCamelPlural }}(ctx, req.Parent, req.Filter, req.OrderBy, req.PageSize, req.PageToken)
+	var filter *models.{{ $model.NameCamel }}FilterInput
+	if len(req.Filter) > 0 {
+		f := models.{{ $model.NameCamel }}FilterInput{}
+		err := json.Unmarshal([]byte(req.Filter), &f)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid argument: filter parse fail: %v", err)
+		}
+		filter = &f
+	}
+
+    {{ $model.NameLowerCamelPlural }}, nextPageToken, totalCount, err := s.repo.List{{ $model.NameCamelPlural }}(ctx, parent, req.Parent, filter, req.OrderBy, req.PageSize, req.PageToken)
 
 	if err != nil {
 		return nil, err
 	}
 
-	pb{{ $modelNameCamelPlural }} := make([]*pb.{{ $modelNameCamel }}, 0, len({{ $modelNameLowerCamelPlural }}))
-	for _, {{ $modelNameLowerCamel }} := range {{ $modelNameLowerCamelPlural }} {
-		pb{{ $modelNameCamelPlural }} = append(pb{{ $modelNameCamelPlural }}, {{ $modelNameLowerCamel }}.ToPB())
+	pb{{ $model.NameCamelPlural }} := make([]*pb.{{ $model.NameCamel }}, 0, len({{ $model.NameLowerCamelPlural }}))
+	for _, {{ $model.NameLowerCamel }} := range {{ $model.NameLowerCamelPlural }} {
+		pb{{ $model.NameCamelPlural }} = append(pb{{ $model.NameCamelPlural }}, {{ $model.NameLowerCamel }}.ToPB())
 	}
 
-	var resp pb.List{{ $modelNameCamelPlural }}Response
-	resp.{{ $modelNameCamelPlural }} = pb{{ $modelNameCamelPlural }}
+	var resp pb.List{{ $model.NameCamelPlural }}Response
+	resp.{{ $model.NameCamelPlural }} = pb{{ $model.NameCamelPlural }}
 	resp.NextPageToken = nextPageToken
 	resp.TotalCount = int32(totalCount)
 
 	return &resp, nil
 }
 
-func (s *{{ $extra.servicename }}Service) Create{{ $modelNameCamel }}(ctx context.Context, req *pb.Create{{ $modelNameCamel }}Request) (*pb.{{ $modelNameCamel }}, error) {
+func (s *{{ $extra.servicename }}Service) List{{ $model.NameCamelPlural }}(ctx context.Context, req *pb.List{{ $model.NameCamelPlural }}Request) (*pb.List{{ $model.NameCamelPlural }}Response, error) {
+	return s.list{{ $model.NameCamelPlural }}(ctx, "", req)
+}
+
+{{- range .Fields}}
+	{{- if eq .JoinType "BelongTo" "ManyToMany" }}
+		func (s *{{ $extra.servicename }}Service) List{{ $model.NameCamelPlural }}With{{ .NameCamel }}(ctx context.Context, req *pb.List{{ $model.NameCamelPlural }}Request) (*pb.List{{ $model.NameCamelPlural }}Response, error) {
+			return s.list{{ $model.NameCamelPlural }}(ctx, "{{ .NameLowerCamelPlural }}", req)
+		}
+	{{- end}}
+	{{- if and .IsRemote (eq .JoinType "ManyToMany") }}
+		func (s *{{ $extra.servicename }}Service) List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}(ctx context.Context, req *pb.List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Request) (*pb.List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Response, error) {
+			if req == nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid argument: req is not provided")
+			}
+
+			{{ .JoinTable.References.NameLowerCamelPlural }}, nextPageToken, totalCount, err := s.repo.List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}(ctx, req.Parent, req.OrderBy, req.PageSize, req.PageToken)
+
+			if err != nil {
+				return nil, err
+			}
+
+			var resp pb.List{{ .JoinTable.References.NameCamelPlural }}With{{ $model.NameCamel }}Response
+			resp.{{ .JoinTable.References.NameCamelPlural }} = {{ .JoinTable.References.NameLowerCamelPlural }}
+			resp.NextPageToken = nextPageToken
+			resp.TotalCount = int32(totalCount)
+			return &resp, nil
+		}
+	{{- end}}
+{{- end}}
+
+func (s *{{ $extra.servicename }}Service) Create{{ $model.NameCamel }}(ctx context.Context, req *pb.Create{{ $model.NameCamel }}Request) (*pb.{{ $model.NameCamel }}, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
 	}
 
-	{{ $modelNameLowerCamel }} := &models.{{ $modelNameCamel }}{}
-	{{ $modelNameLowerCamel }} = {{ $modelNameLowerCamel }}.ToORM(req.Get{{ $modelNameCamel }}())
+	{{ $model.NameLowerCamel }} := &models.{{ $model.NameCamel }}{}
+	{{ $model.NameLowerCamel }} = models.{{ .NameCamel }}ToORM(req.Get{{ $model.NameCamel }}())
 
-	{{ $modelNameLowerCamel }}, err := s.repo.Create{{ $modelNameCamel }}(ctx, {{ $modelNameLowerCamel }})
+	{{ $model.NameLowerCamel }}, err := s.repo.Create{{ $model.NameCamel }}(ctx, {{ $model.NameLowerCamel }})
 
 	if err != nil {
 		return nil, err
 	}
 
-	return {{ $modelNameLowerCamel }}.ToPB(), nil
+	return {{ $model.NameLowerCamel }}.ToPB(), nil
+}
+
+func (s *{{ $extra.servicename }}Service) BatchCreate{{ $model.NameCamel }}(ctx context.Context, req *pb.BatchCreate{{ $model.NameCamel }}Request) (*pb.Batch{{ $model.NameCamel }}Response, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
+	}
+
+	{{ $model.NameLowerCamelPlural }} := make([]*models.{{ $model.NameCamel }}, len(req.Get{{ $model.NameCamelPlural }}()))
+	for i, item := range req.{{ $model.NameCamelPlural }} {
+		{{ $model.NameLowerCamelPlural }}[i] = models.{{ .NameCamel }}ToORM(item)
+	}
+
+	{{ $model.NameLowerCamelPlural }}, err := s.repo.BatchCreate{{ $model.NameCamel }}(ctx, {{ $model.NameLowerCamelPlural }})
+
+	if err != nil {
+		return nil, err
+	}
+
+	pb{{ $model.NameCamelPlural }} := make([]*pb.{{ $model.NameCamel }}, len({{ $model.NameLowerCamelPlural }}))
+	for i, {{ $model.NameLowerCamel }} := range {{ $model.NameLowerCamelPlural }} {
+		pb{{ $model.NameCamelPlural }}[i] = {{ $model.NameLowerCamel }}.ToPB()
+	}
+
+	var resp pb.Batch{{ $model.NameCamel }}Response
+	resp.{{ $model.NameCamelPlural }} = pb{{ $model.NameCamelPlural }}
+
+	return &resp, nil
 }
 
 {{- range .Fields}}
 {{- if or .IsPrimaryKey .IsUnique }}
-	func (s *{{ $extra.servicename }}Service) Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx context.Context, req *pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request) (*pb.{{ $modelNameCamel }}, error) {
+	func (s *{{ $extra.servicename }}Service) Get{{ $model.NameCamel }}By{{ .NameCamel }}(ctx context.Context, req *pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request) (*pb.{{ $model.NameCamel }}, error) {
 		var (
 			withEdges bool
 		)
@@ -75,47 +140,163 @@ func (s *{{ $extra.servicename }}Service) Create{{ $modelNameCamel }}(ctx contex
 		}
 
 		switch req.GetView() {
-		case pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request_VIEW_UNSPECIFIED, pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request_BASIC:
-		case pb.Get{{ $modelNameCamel }}By{{ .NameCamel }}Request_WITH_EDGES:
+		case pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request_VIEW_UNSPECIFIED, pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request_BASIC:
+		case pb.Get{{ $model.NameCamel }}By{{ .NameCamel }}Request_WITH_EDGES:
 			withEdges = true
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "invalid argument: unknown view")
 		}
 
-		{{ $modelNameLowerCamel }}, err := s.repo.Get{{ $modelNameCamel }}By{{ .NameCamel }}(ctx, req.{{ .NameCamel }}, withEdges)
+		{{ $model.NameLowerCamel }}, err := s.repo.Get{{ $model.NameCamel }}By{{ .NameCamel }}(ctx, req.{{ .NameCamel }}, withEdges)
 		if err != nil {
 			return nil, err
 		}
-		return {{ $modelNameLowerCamel }}.ToPB(), nil
+		return {{ $model.NameLowerCamel }}.ToPB(), nil
+	}
+	func (s *{{ $extra.servicename }}Service) BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}(ctx context.Context, req *pb.BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request) (*pb.Batch{{ $model.NameCamel }}Response, error) {
+		var (
+			withEdges bool
+		)
+
+		if req == nil || len(req.{{ .NameCamelPlural }}) == 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{ .NameLowerCamel }} is not provided")
+		}
+
+		switch req.GetView() {
+		case pb.BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request_VIEW_UNSPECIFIED, pb.BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request_BASIC:
+		case pb.BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}Request_WITH_EDGES:
+			withEdges = true
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "invalid argument: unknown view")
+		}
+
+		{{ $model.NameLowerCamelPlural }}, err := s.repo.BatchGet{{ $model.NameCamel }}By{{ .NameCamel }}(ctx, req.{{ .NameCamelPlural }}, withEdges)
+		if err != nil {
+			return nil, err
+		}
+
+		pb{{ $model.NameCamelPlural }} := make([]*pb.{{ $model.NameCamel }}, len({{ $model.NameLowerCamelPlural }}))
+		for i, {{ $model.NameLowerCamel }} := range {{ $model.NameLowerCamelPlural }} {
+			pb{{ $model.NameCamelPlural }}[i] = {{ $model.NameLowerCamel }}.ToPB()
+		}
+
+		var resp pb.Batch{{ $model.NameCamel }}Response
+		resp.{{ $model.NameCamelPlural }} = pb{{ $model.NameCamelPlural }}
+
+		return &resp, nil
 	}
 {{- end}}
 {{- end}}
 
-func (s *{{ $extra.servicename }}Service) Update{{ $modelNameCamel }}(ctx context.Context, req *pb.Update{{ $modelNameCamel }}Request) (*pb.{{ $modelNameCamel }}, error) {
+func (s *{{ $extra.servicename }}Service) Update{{ $model.NameCamel }}(ctx context.Context, req *pb.Update{{ $model.NameCamel }}Request) (*pb.{{ $model.NameCamel }}, error) {
 
-	if req == nil || req.{{ $modelNameCamel }} == nil || req.{{ $modelNameCamel }}.{{$primaryKeyField.NameCamel}} == "" {
+	if req == nil || req.{{ $model.NameCamel }} == nil || req.{{ $model.NameCamel }}.{{$primaryKeyField.NameCamel}} == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
 	}
 
-	{{ $modelNameLowerCamel }} := &models.{{ $modelNameCamel }}{}
-	{{ $modelNameLowerCamel }} = {{ $modelNameLowerCamel }}.ToORM(req.Get{{ $modelNameCamel }}())
+	{{ $model.NameLowerCamel }} := &models.{{ $model.NameCamel }}{}
+	{{ $model.NameLowerCamel }} = models.{{ .NameCamel }}ToORM(req.Get{{ $model.NameCamel }}())
 
-	{{ $modelNameLowerCamel }}, err := s.repo.Update{{ $modelNameCamel }}(ctx, {{ $modelNameLowerCamel }})
+	mask := req.GetUpdateMask()
+	var updateMask []string
+	if mask != nil {
+		CamelCaseFieldMask(mask)
+		updateMask = mask.GetPaths()
+	}
+
+	{{ $model.NameLowerCamel }}, err := s.repo.Update{{ $model.NameCamel }}(ctx, {{ $model.NameLowerCamel }}, updateMask)
 	if err != nil {
 		return nil, err
 	}
-	return {{ $modelNameLowerCamel }}.ToPB(), nil
+	return {{ $model.NameLowerCamel }}.ToPB(), nil
 }
 
-func (s *{{ $extra.servicename }}Service) Delete{{ $modelNameCamel }}(ctx context.Context, req *pb.Delete{{ $modelNameCamel }}Request) (*emptypb.Empty, error) {
+func (s *{{ $extra.servicename }}Service) BatchUpdate{{ $model.NameCamel }}(ctx context.Context, req *pb.BatchUpdate{{ $model.NameCamel }}Request) (*pb.Batch{{ $model.NameCamel }}Response, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
+	}
+
+	{{ $model.NameLowerCamelPlural }} := make([]*models.{{ $model.NameCamel }}, len(req.Get{{ $model.NameCamelPlural }}()))
+	for i, item := range req.{{ $model.NameCamelPlural }} {
+		{{ $model.NameLowerCamelPlural }}[i] = models.{{ .NameCamel }}ToORM(item)
+	}
+
+	mask := req.GetUpdateMask()
+	var updateMask []string
+	if mask != nil {
+		CamelCaseFieldMask(mask)
+		updateMask = mask.GetPaths()
+	}
+
+	{{ $model.NameLowerCamelPlural }}, err := s.repo.BatchUpdate{{ $model.NameCamel }}(ctx, {{ $model.NameLowerCamelPlural }}, updateMask)
+
+	if err != nil {
+		return nil, err
+	}
+
+	pb{{ $model.NameCamelPlural }} := make([]*pb.{{ $model.NameCamel }}, len({{ $model.NameLowerCamelPlural }}))
+	for i, {{ $model.NameLowerCamel }} := range {{ $model.NameLowerCamelPlural }} {
+		pb{{ $model.NameCamelPlural }}[i] = {{ $model.NameLowerCamel }}.ToPB()
+	}
+
+	var resp pb.Batch{{ $model.NameCamel }}Response
+	resp.{{ $model.NameCamelPlural }} = pb{{ $model.NameCamelPlural }}
+
+	return &resp, nil
+}
+
+func (s *{{ $extra.servicename }}Service) Delete{{ $model.NameCamel }}(ctx context.Context, req *pb.Delete{{ $model.NameCamel }}Request) (*emptypb.Empty, error) {
 
 	if req == nil || req.{{$primaryKeyField.NameCamel}} == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
 	}
 
-	_, err := s.repo.Delete{{ $modelNameCamel }}(ctx, req.{{$primaryKeyField.NameCamel}})
+	err := s.repo.Delete{{ $model.NameCamel }}(ctx, req.{{ $primaryKeyField.NameCamel }})
 	if err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
 }
+
+func (s *{{ $extra.servicename }}Service) BatchDelete{{ $model.NameCamel }}(ctx context.Context, req *pb.BatchDelete{{ $model.NameCamel }}Request) (*emptypb.Empty, error) {
+
+	if req == nil || len(req.{{$primaryKeyField.NameCamelPlural}}) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{$primaryKeyField.NameLowerCamel}} is not provided")
+	}
+
+	err := s.repo.BatchDelete{{ $model.NameCamel }}(ctx, req.{{ $primaryKeyField.NameCamelPlural }})
+	if err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+{{- range .Fields}}
+		{{- if eq .JoinType "ManyToMany" }}
+			func (s *{{ $extra.servicename }}Service) {{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}(ctx context.Context, req *pb.{{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}Request) (*emptypb.Empty, error) {
+
+				if req == nil || req.{{ .JoinTable.ForeignKey.NameCamel }} == "" {
+					return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{ .JoinTable.ForeignKey.NameCamel }} is not provided")
+				}
+
+				err := s.repo.{{ $model.NameCamelPlural }}AssignWith{{ .NameCamelPlural }}(ctx, req.{{ .JoinTable.ForeignKey.NameCamel }}, req.{{ .JoinTable.References.NameCamelPlural }})
+				if err != nil {
+					return nil, err
+				}
+				return &emptypb.Empty{}, nil
+			}
+
+			func (s *{{ $extra.servicename }}Service) {{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}(ctx context.Context, req *pb.{{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}Request) (*emptypb.Empty, error) {
+
+				if req == nil || req.{{ .JoinTable.ForeignKey.NameCamel }} == "" {
+					return nil, status.Errorf(codes.InvalidArgument, "invalid argument: {{ .JoinTable.ForeignKey.NameCamel }} is not provided")
+				}
+
+				err := s.repo.{{ $model.NameCamelPlural }}UnassignWith{{ .NameCamelPlural }}(ctx, req.{{ .JoinTable.ForeignKey.NameCamel }}, req.{{ .JoinTable.References.NameCamelPlural }})
+				if err != nil {
+					return nil, err
+				}
+				return &emptypb.Empty{}, nil
+			}
+		{{- end}}
+{{- end}}

@@ -2,22 +2,13 @@ app:
   name: 
   # 运行模式 1. debug 2. release， 默认 release
   mode: debug
-  # 是否开启 opentracing, 默认 false
-  tracing: true
-  # 是否开启 Prometheus, 默认 false
-  promtheus: true
   # 是否能访问Api文档, 默认 false
   doc: true
-  # 是否能访问Golang Pprof, 默认 false
-  pprof: true
   # 绑定 IP
   host: 127.0.0.1
   # 绑定 Port
   port: 7779
-  # 绑定 IP
-  gatewayHost: 127.0.0.1
-  # 绑定 Port
-  gatewayPort: 7779
+
 
 db:
   dialect: mysql
@@ -36,13 +27,34 @@ logger:
   maxAge: 3
   level: "debug"
   stdout: false
-jaeger:
-  serviceName: admin
-  reporter:
-    localAgentHostPort: "jaeger-agent:6831"
-  sampler:
-    type: const
-    param: 1
+
+probes:
+  # 是否开启 Kubernetes probes, 默认 false
+  enable: false
+  readinessPath: /ready
+  livenessPath: /live
+  port: 8080
+prometheus:
+  # 是否开启 Prometheus, 默认 false
+  enable: false
+  path: /metrics
+  port: 8003
+  checkIntervalSeconds: 10
+pprof:
+  # 是否能访问Golang Pprof, 默认 false
+  enable: false
+  port: 6060
+tracing: 
+  # 是否开启 opentracing, 默认 false
+  enable: false
+  jaeger:
+    serviceName: admin
+    logSpans: false
+    reporter:
+      localAgentHostPort: "jaeger-agent:6831"
+    sampler:
+      type: const
+      param: 1
 jwt:
   # dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64 -w 0 | rev | cut -b 2- | rev
   # signingKey: GRuHhzxQm7z0H7jFBHxd0x2UEjvJHgt+286nnJCOHYw

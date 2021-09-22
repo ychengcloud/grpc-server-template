@@ -1,0 +1,96 @@
+package server
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/go-playground/validator"
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/uber/jaeger-client-go"
+	jagercfg "github.com/uber/jaeger-client-go/config"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
+	"{{ .Extra.pkgpath }}/config"
+	"{{ .Extra.pkgpath }}/database"
+	repogorm "{{ .Extra.pkgpath }}/repositories/gorm"
+	"{{ .Extra.pkgpath }}/services"
+	pb "{{ .Extra.protopkg }}/gen/go/{{ .Extra.package }}/v1"
+)
+
+type server struct {
+	cfg *config.Config
+	log *zap.Logger
+	v   *validator.Validate
+}
+
+func NewServer(log *zap.Logger, cfg *config.Config) *server {
+	return &server{log: log, cfg: cfg, v: validator.New()}
+}
+
+func (s *server) Run() error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	db, err := database.NewGorm(ctx,
+		database.WithMysqlHost(s.cfg.DatabaseConfig.MysqlOptions.Host),
+		database.WithMysqlName(s.cfg.DatabaseConfig.MysqlOptions.Name),
+		database.WithMysqlUser(s.cfg.DatabaseConfig.MysqlOptions.User),
+		database.WithMysqlPassword(s.cfg.DatabaseConfig.MysqlOptions.Password),
+	)
+	if err != nil {
+		log.Fatalf("failed create database: %s", err)
+	}
+
+	repo := repogorm.New{{ .Extra.servicename }}Repository(db)
+	// Initialize the generated <no value> service.
+	svc := services.New{{ .Extra.servicename }}Service(repo)
+
+	if s.cfg.PrometheusConfig.Enable {
+		s.runPrometheusServer(cancel)
+	}
+
+	if s.cfg.TracingConfig.Enable {
+		jaegerCfg := &s.cfg.TracingConfig.JaegerConfig
+		tracer, closer, err := jaegerCfg.NewTracer(jagercfg.Logger(jaeger.StdLogger))
+		if err != nil {
+			return err
+		}
+		defer closer.Close() // nolint: errcheck
+		opentracing.SetGlobalTracer(tracer)
+	}
+
+	closeGrpcServer, grpcServer, err := s.newGrpcServer()
+	if err != nil {
+		return err
+	}
+	defer closeGrpcServer() // nolint: errcheck
+	pb.Register{{ .Extra.servicename }}ServiceServer(grpcServer, svc)
+
+	hsrv := health.NewServer()
+	hsrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(grpcServer, hsrv)
+
+	<-ctx.Done()
+	grpcServer.GracefulStop()
+	return nil
+}
+
+func (s *server) runPrometheusServer(cancel context.CancelFunc) {
+	go func() {
+		prometheusServer := &http.Server{Addr: fmt.Sprintf(":%d", s.cfg.PrometheusConfig.Port)}
+		http.Handle("/metrics", promhttp.Handler())
+		s.log.Sugar().Infof("Metrics server is running on port: %d", s.cfg.PrometheusConfig.Port)
+		if err := prometheusServer.ListenAndServe(); err != nil {
+			s.log.Sugar().Errorf("prometheusServer.Start: %v", err)
+			cancel()
+		}
+	}()
+}
